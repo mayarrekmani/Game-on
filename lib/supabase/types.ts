@@ -128,6 +128,7 @@ export type Database = {
           user_id: string;
           status: "in" | "out" | "maybe";
           paid: boolean;
+          team: "A" | "B" | null;
           responded_at: string;
         };
         Insert: {
@@ -135,10 +136,12 @@ export type Database = {
           user_id: string;
           status?: "in" | "out" | "maybe";
           paid?: boolean;
+          team?: "A" | "B" | null;
         };
         Update: {
           status?: "in" | "out" | "maybe";
           paid?: boolean;
+          team?: "A" | "B" | null;
         };
       };
       messages: {
@@ -174,6 +177,22 @@ export type Database = {
         Update: {
           last_seen_sessions_at?: string;
           last_seen_chat_at?: string;
+        };
+      };
+      player_skill_levels: {
+        Row: {
+          user_id: string;
+          sport: "volleyball" | "soccer" | "basketball" | "football";
+          level: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          sport: "volleyball" | "soccer" | "basketball" | "football";
+          level?: number;
+        };
+        Update: {
+          level?: number;
         };
       };
     };

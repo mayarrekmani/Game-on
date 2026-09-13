@@ -34,7 +34,7 @@ export default async function SessionPage({
     supabase
       .from("rsvps")
       .select(
-        "user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+        "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
       )
       .eq("session_id", params.sessionId),
   ]);

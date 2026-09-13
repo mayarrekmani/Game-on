@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import VirtualCourt from "@/components/VirtualCourt";
 import Avatar from "@/components/Avatar";
+import SkillLevelPrompt from "@/components/SkillLevelPrompt";
 import { SPORTS, type SportKey } from "@/lib/sports";
 
 type RsvpStatus = "in" | "out" | "maybe";
@@ -12,6 +13,7 @@ type RsvpRow = {
   user_id: string;
   status: RsvpStatus;
   paid: boolean;
+  team: "A" | "B" | null;
   profiles: {
     display_name: string | null;
     avatar_shape: string | null;
@@ -42,14 +44,35 @@ export default function RsvpPanel({
 }) {
   const [rsvps, setRsvps] = useState<RsvpRow[]>(initialRsvps);
   const [updating, setUpdating] = useState(false);
+  const [needsSkillLevel, setNeedsSkillLevel] = useState(false);
+  const [balancing, setBalancing] = useState(false);
+  const [skillLevels, setSkillLevels] = useState<Map<string, number>>(new Map());
   const supabase = createClient();
   const isCreator = userId === createdBy;
+
+  // Check once whether the current user has already set a skill level
+  // for this sport — if not, and they're confirmed "in", prompt them.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("player_skill_levels")
+        .select("level")
+        .eq("user_id", userId)
+        .eq("sport", sport)
+        .maybeSingle();
+      if (!cancelled) setNeedsSkillLevel(!data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, sport, supabase]);
 
   const refetchRsvps = async () => {
     const { data } = await supabase
       .from("rsvps")
       .select(
-        "user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+        "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
       )
       .eq("session_id", sessionId);
     if (data) setRsvps(data as unknown as RsvpRow[]);
@@ -102,7 +125,7 @@ export default function RsvpPanel({
       if (exists) {
         return prev.map((r) => (r.user_id === userId ? { ...r, status } : r));
       }
-      return [...prev, { user_id: userId, status, paid: false, profiles: myProfile }];
+      return [...prev, { user_id: userId, status, paid: false, team: null, profiles: myProfile }];
     });
 
     await supabase
@@ -158,6 +181,7 @@ export default function RsvpPanel({
     icon: r.profiles?.avatar_icon ?? null,
     photoUrl: r.profiles?.avatar_url ?? null,
     paid: r.paid,
+    team: r.team,
   });
 
   const yesList = rsvps.filter((r) => r.status === "in").map(toPlayer);
@@ -169,6 +193,118 @@ export default function RsvpPanel({
   const isOverCapacity = yesList.length > totalCapacity;
   const confirmed = yesList.slice(0, totalCapacity);
   const extra = yesList.slice(totalCapacity);
+
+  // If the creator has manually assigned teams, use that to decide who
+  // shows up on which side of the court; anyone left unassigned just
+  // fills whatever's left, same as before this feature existed.
+  const courtOrder = [
+    ...confirmed.filter((p) => p.team === "A"),
+    ...confirmed.filter((p) => p.team === "B"),
+    ...confirmed.filter((p) => !p.team),
+  ];
+  const hasManualTeams = confirmed.some((p) => p.team);
+
+  const confirmedIdsKey = confirmed.map((p) => p.userId).sort().join(",");
+  useEffect(() => {
+    if (!isCreator || confirmed.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("player_skill_levels")
+        .select("user_id, level")
+        .eq("sport", sport)
+        .in(
+          "user_id",
+          confirmed.map((p) => p.userId)
+        );
+      if (!cancelled) {
+        setSkillLevels(new Map((data ?? []).map((l: any) => [l.user_id, l.level])));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmedIdsKey, isCreator, sport, supabase]);
+
+  const assignTeam = async (targetUserId: string, team: "A" | "B" | null) => {
+    if (!isCreator) return;
+    setRsvps((prev) =>
+      prev.map((r) => (r.user_id === targetUserId ? { ...r, team } : r))
+    );
+    await supabase
+      .from("rsvps")
+      .update({ team })
+      .eq("session_id", sessionId)
+      .eq("user_id", targetUserId);
+  };
+
+  const autoBalanceTeams = async () => {
+    if (!isCreator || confirmed.length === 0) return;
+    setBalancing(true);
+
+    const confirmedIds = confirmed.map((p) => p.userId);
+    const { data: levels } = await supabase
+      .from("player_skill_levels")
+      .select("user_id, level")
+      .eq("sport", sport)
+      .in("user_id", confirmedIds);
+
+    const levelByUser = new Map((levels ?? []).map((l: any) => [l.user_id, l.level]));
+
+    // Greedy balance: strongest players first, each one goes to whichever
+    // team currently has the lower total skill — while respecting the
+    // per-side capacity so team sizes stay even.
+    const sorted = [...confirmed].sort(
+      (a, b) => (levelByUser.get(b.userId) ?? 3) - (levelByUser.get(a.userId) ?? 3)
+    );
+    let sumA = 0;
+    let sumB = 0;
+    let countA = 0;
+    let countB = 0;
+    const assignments: { userId: string; team: "A" | "B" }[] = [];
+
+    sorted.forEach((p) => {
+      const level = levelByUser.get(p.userId) ?? 3;
+      const canA = countA < perSide * fieldsCount;
+      const canB = countB < perSide * fieldsCount;
+      let team: "A" | "B";
+      if (canA && canB) {
+        team = sumA <= sumB ? "A" : "B";
+      } else if (canA) {
+        team = "A";
+      } else {
+        team = "B";
+      }
+      assignments.push({ userId: p.userId, team });
+      if (team === "A") {
+        sumA += level;
+        countA += 1;
+      } else {
+        sumB += level;
+        countB += 1;
+      }
+    });
+
+    setRsvps((prev) =>
+      prev.map((r) => {
+        const match = assignments.find((a) => a.userId === r.user_id);
+        return match ? { ...r, team: match.team } : r;
+      })
+    );
+
+    await Promise.all(
+      assignments.map((a) =>
+        supabase
+          .from("rsvps")
+          .update({ team: a.team })
+          .eq("session_id", sessionId)
+          .eq("user_id", a.userId)
+      )
+    );
+
+    setBalancing(false);
+  };
 
   const trackPayment = totalCost > 0;
   const costPerPerson =
@@ -223,10 +359,95 @@ export default function RsvpPanel({
         )}
       </div>
 
+      {myRsvp === "in" && needsSkillLevel && (
+        <SkillLevelPrompt
+          userId={userId}
+          sport={sport}
+          onSaved={() => setNeedsSkillLevel(false)}
+        />
+      )}
+
       {isCreator && isOverCapacity && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <b>{yesList.length} people said yes</b>, but you only booked space for{" "}
           {totalCapacity}. Worth booking another {sportConfig.venues ? "court" : "field"}?
+        </div>
+      )}
+
+      {isCreator && confirmed.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-500">Assign teams</h3>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={autoBalanceTeams}
+                disabled={balancing}
+                className="text-xs font-semibold text-brand-700 underline disabled:opacity-50"
+              >
+                {balancing ? "Balancing..." : "⚖️ Auto-balance by skill"}
+              </button>
+              {hasManualTeams && (
+                <button
+                  type="button"
+                  onClick={() => confirmed.forEach((p) => assignTeam(p.userId, null))}
+                  className="text-xs text-slate-400 underline"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="mb-3 text-xs text-slate-400">
+            Optional — tap A or B for anyone you want on a specific side. Everyone
+            else fills in around them.
+          </p>
+          <div className="space-y-1.5">
+            {confirmed.map((p) => (
+              <div key={p.userId} className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-sm">
+                  <Avatar
+                    shape={p.shape}
+                    color={p.color}
+                    icon={p.icon}
+                    photoUrl={p.photoUrl}
+                    name={p.name}
+                    size="xs"
+                  />
+                  {p.name}
+                  {skillLevels.has(p.userId) && (
+                    <span className="text-xs text-slate-400">
+                      · {"★".repeat(skillLevels.get(p.userId)!)}
+                    </span>
+                  )}
+                </span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => assignTeam(p.userId, p.team === "A" ? null : "A")}
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                      p.team === "A"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    A
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => assignTeam(p.userId, p.team === "B" ? null : "B")}
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                      p.team === "B"
+                        ? "bg-orange-600 text-white"
+                        : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    B
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -261,7 +482,7 @@ export default function RsvpPanel({
             <VirtualCourt
               sport={sport}
               perSide={perSide}
-              confirmed={confirmed.slice(
+              confirmed={courtOrder.slice(
                 fieldIdx * capacityPerField,
                 (fieldIdx + 1) * capacityPerField
               )}

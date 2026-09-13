@@ -36,27 +36,45 @@ export default function GroupChat({
   const bottomRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
+  const refetchMessages = async () => {
+    const { data } = await supabase
+      .from("messages")
+      .select(
+        "id, user_id, content, created_at, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+      )
+      .eq("group_id", groupId)
+      .order("created_at", { ascending: true });
+    if (data) setMessages(data as unknown as Message[]);
+  };
+
   useEffect(() => {
     const channel = supabase
       .channel(`messages:${groupId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `group_id=eq.${groupId}` },
-        async () => {
-          const { data } = await supabase
-            .from("messages")
-            .select(
-              "id, user_id, content, created_at, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
-            )
-            .eq("group_id", groupId)
-            .order("created_at", { ascending: true });
-          if (data) setMessages(data as unknown as Message[]);
-        }
+        () => refetchMessages()
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [groupId, supabase]);
+
+  // Realtime websockets can silently drop (phone locks, tab backgrounds,
+  // wifi hiccups) without reconnecting cleanly. As a safety net, refetch
+  // whenever the tab/app regains focus, instead of relying purely on the
+  // live connection.
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") refetchMessages();
+    };
+    document.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
     };
   }, [groupId, supabase]);
 

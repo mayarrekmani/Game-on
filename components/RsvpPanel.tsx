@@ -45,6 +45,16 @@ export default function RsvpPanel({
   const supabase = createClient();
   const isCreator = userId === createdBy;
 
+  const refetchRsvps = async () => {
+    const { data } = await supabase
+      .from("rsvps")
+      .select(
+        "user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+      )
+      .eq("session_id", sessionId);
+    if (data) setRsvps(data as unknown as RsvpRow[]);
+  };
+
   useEffect(() => {
     const channel = supabase
       .channel(`rsvps:${sessionId}`)
@@ -56,15 +66,7 @@ export default function RsvpPanel({
           table: "rsvps",
           filter: `session_id=eq.${sessionId}`,
         },
-        async () => {
-          const { data } = await supabase
-            .from("rsvps")
-            .select(
-              "user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
-            )
-            .eq("session_id", sessionId);
-          if (data) setRsvps(data as unknown as RsvpRow[]);
-        }
+        () => refetchRsvps()
       )
       .subscribe();
 
@@ -73,10 +75,36 @@ export default function RsvpPanel({
     };
   }, [sessionId, supabase]);
 
+  // Same reliability fallback as chat — refetch whenever the tab/app
+  // regains focus, since realtime connections can drop silently.
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") refetchRsvps();
+    };
+    document.addEventListener("visibilitychange", handleFocus);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleFocus);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [sessionId, supabase]);
+
   const myRsvp = rsvps.find((r) => r.user_id === userId)?.status;
 
   const setStatus = async (status: RsvpStatus) => {
     setUpdating(true);
+
+    // Optimistic update so the button highlights instantly instead of
+    // waiting for the realtime echo.
+    setRsvps((prev) => {
+      const exists = prev.some((r) => r.user_id === userId);
+      const myProfile = prev.find((r) => r.user_id === userId)?.profiles ?? null;
+      if (exists) {
+        return prev.map((r) => (r.user_id === userId ? { ...r, status } : r));
+      }
+      return [...prev, { user_id: userId, status, paid: false, profiles: myProfile }];
+    });
+
     await supabase
       .from("rsvps")
       .upsert(
@@ -100,11 +128,26 @@ export default function RsvpPanel({
     if (!isCreator) return;
     const target = rsvps.find((r) => r.user_id === targetUserId);
     if (!target) return;
-    await supabase
+    const newPaid = !target.paid;
+
+    // Update the screen immediately instead of waiting for the realtime
+    // round-trip to echo the change back — makes it feel instant. If the
+    // save fails, flip it back.
+    setRsvps((prev) =>
+      prev.map((r) => (r.user_id === targetUserId ? { ...r, paid: newPaid } : r))
+    );
+
+    const { error } = await supabase
       .from("rsvps")
-      .update({ paid: !target.paid })
+      .update({ paid: newPaid })
       .eq("session_id", sessionId)
       .eq("user_id", targetUserId);
+
+    if (error) {
+      setRsvps((prev) =>
+        prev.map((r) => (r.user_id === targetUserId ? { ...r, paid: !newPaid } : r))
+      );
+    }
   };
 
   const toPlayer = (r: RsvpRow) => ({

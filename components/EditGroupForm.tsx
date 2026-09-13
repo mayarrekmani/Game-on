@@ -23,6 +23,7 @@ export default function EditGroupForm({
     photoDataUrl: group.avatar_url,
   });
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
@@ -49,6 +50,28 @@ export default function EditGroupForm({
       return;
     }
     router.push(`/groups/${group.id}`);
+    router.refresh();
+  };
+
+  const handleDelete = async () => {
+    if (
+      !confirm(
+        `Delete "${group.name}"? This permanently removes the group, every session, RSVP, and chat message in it — for everyone. This can't be undone.`
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setError(null);
+
+    const { error: deleteError } = await supabase.from("groups").delete().eq("id", group.id);
+
+    setDeleting(false);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    router.push("/");
     router.refresh();
   };
 
@@ -89,6 +112,20 @@ export default function EditGroupForm({
         >
           Cancel
         </button>
+      </div>
+
+      <div className="mt-6 border-t border-slate-200 pt-5">
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="w-full rounded border-2 border-red-200 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+        >
+          {deleting ? "Deleting..." : "Delete this group"}
+        </button>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          Deletes everything — sessions, RSVPs, chat history — for every member.
+        </p>
       </div>
     </form>
   );

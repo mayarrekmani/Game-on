@@ -12,9 +12,9 @@ export default async function EditSessionPage({
 }) {
   const supabase = createClient();
   const {
-    data: { session },
+    data: { session: authSession },
   } = await supabase.auth.getSession();
-  const user = session?.user;
+  const user = authSession?.user;
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase

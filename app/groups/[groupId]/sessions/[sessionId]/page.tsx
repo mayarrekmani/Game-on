@@ -24,20 +24,26 @@ export default async function SessionPage({
   // None of these three depend on each other's results (rsvps only needs
   // the sessionId from the URL, not the session row itself) — fetch them
   // together instead of one-after-another.
-  const [{ data: profile }, { data: session }, { data: rsvps }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
-      .eq("id", user.id)
-      .single(),
-    supabase.from("sessions").select("*, groups(name)").eq("id", params.sessionId).single(),
-    supabase
-      .from("rsvps")
-      .select(
-        "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
-      )
-      .eq("session_id", params.sessionId),
-  ]);
+  const [{ data: profile }, { data: session }, { data: rsvps }, { data: teams }] =
+    await Promise.all([
+      supabase
+        .from("profiles")
+        .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
+        .eq("id", user.id)
+        .single(),
+      supabase.from("sessions").select("*, groups(name)").eq("id", params.sessionId).single(),
+      supabase
+        .from("rsvps")
+        .select(
+          "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+        )
+        .eq("session_id", params.sessionId),
+      supabase
+        .from("session_teams")
+        .select("team_key, name")
+        .eq("session_id", params.sessionId)
+        .order("team_key", { ascending: true }),
+    ]);
 
   if (!session) notFound();
 
@@ -107,6 +113,7 @@ export default async function SessionPage({
         fieldsCount={session.fields_count}
         totalCost={session.total_cost}
         initialRsvps={(rsvps ?? []) as any}
+        initialTeams={(teams ?? []) as any}
       />
     </main>
   );

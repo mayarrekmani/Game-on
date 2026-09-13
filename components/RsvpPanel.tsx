@@ -13,7 +13,7 @@ type RsvpRow = {
   user_id: string;
   status: RsvpStatus;
   paid: boolean;
-  team: "A" | "B" | null;
+  team: string | null;
   profiles: {
     display_name: string | null;
     avatar_shape: string | null;
@@ -22,6 +22,10 @@ type RsvpRow = {
     avatar_url: string | null;
   } | null;
 };
+
+type TeamRow = { team_key: string; name: string };
+
+const ALL_TEAM_KEYS = ["A", "B", "C", "D", "E", "F"];
 
 export default function RsvpPanel({
   sessionId,
@@ -32,6 +36,7 @@ export default function RsvpPanel({
   fieldsCount,
   totalCost,
   initialRsvps,
+  initialTeams,
 }: {
   sessionId: string;
   userId: string;
@@ -41,8 +46,10 @@ export default function RsvpPanel({
   fieldsCount: number;
   totalCost: number;
   initialRsvps: RsvpRow[];
+  initialTeams: TeamRow[];
 }) {
   const [rsvps, setRsvps] = useState<RsvpRow[]>(initialRsvps);
+  const [teams, setTeams] = useState<TeamRow[]>(initialTeams);
   const [updating, setUpdating] = useState(false);
   const [needsSkillLevel, setNeedsSkillLevel] = useState(false);
   const [balancing, setBalancing] = useState(false);
@@ -89,7 +96,35 @@ export default function RsvpPanel({
           table: "rsvps",
           filter: `session_id=eq.${sessionId}`,
         },
-        () => refetchRsvps()
+        (payload) => {
+          // Patch just the row that actually changed instead of
+          // re-fetching the whole list — a full refetch triggered by one
+          // change can arrive slightly late and overwrite a different,
+          // more recent optimistic update still in flight, which is
+          // what made clicks "not stick" until a few tries. Patching in
+          // place also means fewer database round-trips overall.
+          if (payload.eventType === "DELETE") {
+            const oldRow = payload.old as any;
+            setRsvps((prev) => prev.filter((r) => r.user_id !== oldRow.user_id));
+            return;
+          }
+          const newRow = payload.new as any;
+          if (!newRow) return;
+          setRsvps((prev) => {
+            const exists = prev.some((r) => r.user_id === newRow.user_id);
+            if (exists) {
+              return prev.map((r) =>
+                r.user_id === newRow.user_id
+                  ? { ...r, status: newRow.status, paid: newRow.paid, team: newRow.team }
+                  : r
+              );
+            }
+            // A brand-new participant we don't have profile info for
+            // locally yet — this is the one case worth a real refetch.
+            refetchRsvps();
+            return prev;
+          });
+        }
       )
       .subscribe();
 
@@ -194,13 +229,24 @@ export default function RsvpPanel({
   const confirmed = yesList.slice(0, totalCapacity);
   const extra = yesList.slice(totalCapacity);
 
-  // If the creator has manually assigned teams, use that to decide who
-  // shows up on which side of the court; anyone left unassigned just
-  // fills whatever's left, same as before this feature existed.
+  // Only the first two teams (by key, A then B) actually line up on the
+  // physical court/field — a field only has two sides. Any additional
+  // teams the creator adds show up as separate named rosters below the
+  // court instead, since there's no third "side" to put them on.
+  const sortedTeams = [...teams].sort((a, b) => a.team_key.localeCompare(b.team_key));
+  const courtTeamA = sortedTeams[0] ?? null;
+  const courtTeamB = sortedTeams[1] ?? null;
+  const benchTeams = sortedTeams.slice(2);
+
+  const myTeam = rsvps.find((r) => r.user_id === userId)?.team ?? null;
+
+  // Anyone assigned to the court teams goes to their actual side;
+  // anyone unassigned (or assigned to a bench team) just fills
+  // whatever's left on the court, same as before this feature existed.
   const courtOrder = [
-    ...confirmed.filter((p) => p.team === "A"),
-    ...confirmed.filter((p) => p.team === "B"),
-    ...confirmed.filter((p) => !p.team),
+    ...confirmed.filter((p) => p.team === courtTeamA?.team_key),
+    ...confirmed.filter((p) => p.team === courtTeamB?.team_key),
+    ...confirmed.filter((p) => !p.team || (p.team !== courtTeamA?.team_key && p.team !== courtTeamB?.team_key)),
   ];
   const hasManualTeams = confirmed.some((p) => p.team);
 
@@ -227,8 +273,9 @@ export default function RsvpPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmedIdsKey, isCreator, sport, supabase]);
 
-  const assignTeam = async (targetUserId: string, team: "A" | "B" | null) => {
-    if (!isCreator) return;
+  const assignTeam = async (targetUserId: string, team: string | null) => {
+    // Anyone can set their own team; only the creator can set someone else's.
+    if (targetUserId !== userId && !isCreator) return;
     setRsvps((prev) =>
       prev.map((r) => (r.user_id === targetUserId ? { ...r, team } : r))
     );
@@ -239,8 +286,27 @@ export default function RsvpPanel({
       .eq("user_id", targetUserId);
   };
 
+  const addTeam = async () => {
+    if (!isCreator || teams.length >= ALL_TEAM_KEYS.length) return;
+    const nextKey = ALL_TEAM_KEYS.find((k) => !teams.some((t) => t.team_key === k));
+    if (!nextKey) return;
+    const name = `Team ${nextKey}`;
+    setTeams((prev) => [...prev, { team_key: nextKey, name }]);
+    await supabase.from("session_teams").insert({ session_id: sessionId, team_key: nextKey, name });
+  };
+
+  const renameTeam = async (teamKey: string, name: string) => {
+    if (!isCreator) return;
+    setTeams((prev) => prev.map((t) => (t.team_key === teamKey ? { ...t, name } : t)));
+    await supabase
+      .from("session_teams")
+      .update({ name })
+      .eq("session_id", sessionId)
+      .eq("team_key", teamKey);
+  };
+
   const autoBalanceTeams = async () => {
-    if (!isCreator || confirmed.length === 0) return;
+    if (!isCreator || confirmed.length === 0 || teams.length === 0) return;
     setBalancing(true);
 
     const confirmedIds = confirmed.map((p) => p.userId);
@@ -252,38 +318,28 @@ export default function RsvpPanel({
 
     const levelByUser = new Map((levels ?? []).map((l: any) => [l.user_id, l.level]));
 
-    // Greedy balance: strongest players first, each one goes to whichever
-    // team currently has the lower total skill — while respecting the
-    // per-side capacity so team sizes stay even.
+    // Greedy balance across however many teams exist: strongest players
+    // first, each one goes to whichever team currently has the lowest
+    // total skill — while capping each team at an even share of the
+    // headcount so team sizes stay balanced too.
     const sorted = [...confirmed].sort(
       (a, b) => (levelByUser.get(b.userId) ?? 3) - (levelByUser.get(a.userId) ?? 3)
     );
-    let sumA = 0;
-    let sumB = 0;
-    let countA = 0;
-    let countB = 0;
-    const assignments: { userId: string; team: "A" | "B" }[] = [];
+    const capacityPerTeam = Math.ceil(confirmed.length / teams.length);
+    const sums = new Map(teams.map((t) => [t.team_key, 0]));
+    const counts = new Map(teams.map((t) => [t.team_key, 0]));
+    const assignments: { userId: string; team: string }[] = [];
 
     sorted.forEach((p) => {
       const level = levelByUser.get(p.userId) ?? 3;
-      const canA = countA < perSide * fieldsCount;
-      const canB = countB < perSide * fieldsCount;
-      let team: "A" | "B";
-      if (canA && canB) {
-        team = sumA <= sumB ? "A" : "B";
-      } else if (canA) {
-        team = "A";
-      } else {
-        team = "B";
-      }
-      assignments.push({ userId: p.userId, team });
-      if (team === "A") {
-        sumA += level;
-        countA += 1;
-      } else {
-        sumB += level;
-        countB += 1;
-      }
+      const available = teams.filter((t) => (counts.get(t.team_key) ?? 0) < capacityPerTeam);
+      const pool = available.length > 0 ? available : teams;
+      const best = pool.reduce((a, b) =>
+        (sums.get(a.team_key) ?? 0) <= (sums.get(b.team_key) ?? 0) ? a : b
+      );
+      assignments.push({ userId: p.userId, team: best.team_key });
+      sums.set(best.team_key, (sums.get(best.team_key) ?? 0) + level);
+      counts.set(best.team_key, (counts.get(best.team_key) ?? 0) + 1);
     });
 
     setRsvps((prev) =>
@@ -374,10 +430,32 @@ export default function RsvpPanel({
         </div>
       )}
 
+      {myRsvp === "in" && teams.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="mb-2 text-sm font-semibold text-slate-500">Your team</h3>
+          <div className="flex flex-wrap gap-2">
+            {teams.map((t) => (
+              <button
+                key={t.team_key}
+                type="button"
+                onClick={() => assignTeam(userId, myTeam === t.team_key ? null : t.team_key)}
+                className={`rounded-full border-2 px-4 py-1.5 text-sm font-semibold ${
+                  myTeam === t.team_key
+                    ? "border-brand-500 bg-brand-500 text-white"
+                    : "border-slate-200 text-slate-600"
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {isCreator && confirmed.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-500">Assign teams</h3>
+            <h3 className="text-sm font-semibold text-slate-500">Manage teams</h3>
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -398,10 +476,32 @@ export default function RsvpPanel({
               )}
             </div>
           </div>
+
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {teams.map((t) => (
+              <input
+                key={t.team_key}
+                value={t.name}
+                onChange={(e) => renameTeam(t.team_key, e.target.value)}
+                className="w-28 rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold"
+              />
+            ))}
+            {teams.length < ALL_TEAM_KEYS.length && (
+              <button
+                type="button"
+                onClick={addTeam}
+                className="rounded-md border border-dashed border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-500 hover:border-brand-500 hover:text-brand-600"
+              >
+                + Add team
+              </button>
+            )}
+          </div>
+
           <p className="mb-3 text-xs text-slate-400">
-            Optional — tap A or B for anyone you want on a specific side. Everyone
-            else fills in around them.
+            Tap a team name to rename it. Only the first two teams line up on the
+            court itself — any extra teams show as rosters below it.
           </p>
+
           <div className="space-y-1.5">
             {confirmed.map((p) => (
               <div key={p.userId} className="flex items-center justify-between gap-2">
@@ -421,29 +521,23 @@ export default function RsvpPanel({
                     </span>
                   )}
                 </span>
-                <div className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => assignTeam(p.userId, p.team === "A" ? null : "A")}
-                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
-                      p.team === "A"
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-500"
-                    }`}
-                  >
-                    A
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => assignTeam(p.userId, p.team === "B" ? null : "B")}
-                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
-                      p.team === "B"
-                        ? "bg-orange-600 text-white"
-                        : "bg-slate-100 text-slate-500"
-                    }`}
-                  >
-                    B
-                  </button>
+                <div className="flex flex-wrap justify-end gap-1">
+                  {teams.map((t) => (
+                    <button
+                      key={t.team_key}
+                      type="button"
+                      onClick={() =>
+                        assignTeam(p.userId, p.team === t.team_key ? null : t.team_key)
+                      }
+                      className={`rounded-md px-2 py-1 text-xs font-bold ${
+                        p.team === t.team_key
+                          ? "bg-brand-600 text-white"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {t.team_key}
+                    </button>
+                  ))}
                 </div>
               </div>
             ))}
@@ -479,6 +573,18 @@ export default function RsvpPanel({
                 {sportConfig.venues ? "Court" : "Field"} {fieldIdx + 1}
               </div>
             )}
+            {(courtTeamA || courtTeamB) && (
+              <div className="mb-1 flex justify-between text-xs font-bold">
+                <span className={myTeam === courtTeamA?.team_key ? "text-brand-700" : "text-slate-400"}>
+                  {courtTeamA?.name ?? "Team A"}
+                  {myTeam === courtTeamA?.team_key && " (you)"}
+                </span>
+                <span className={myTeam === courtTeamB?.team_key ? "text-brand-700" : "text-slate-400"}>
+                  {courtTeamB?.name ?? "Team B"}
+                  {myTeam === courtTeamB?.team_key && " (you)"}
+                </span>
+              </div>
+            )}
             <VirtualCourt
               sport={sport}
               perSide={perSide}
@@ -493,6 +599,21 @@ export default function RsvpPanel({
           </div>
         ))}
       </div>
+
+      {benchTeams.map((t) => {
+        const roster = confirmed.filter((p) => p.team === t.team_key);
+        if (roster.length === 0) return null;
+        return (
+          <RsvpList
+            key={t.team_key}
+            title={`${t.name} (${roster.length})`}
+            players={roster}
+            trackPayment={trackPayment}
+            isCreator={isCreator}
+            onTogglePaid={togglePaid}
+          />
+        );
+      })}
 
       {extra.length > 0 && (
         <RsvpList

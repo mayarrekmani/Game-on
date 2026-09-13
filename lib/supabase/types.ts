@@ -128,7 +128,7 @@ export type Database = {
           user_id: string;
           status: "in" | "out" | "maybe";
           paid: boolean;
-          team: "A" | "B" | null;
+          team: string | null;
           responded_at: string;
         };
         Insert: {
@@ -136,12 +136,28 @@ export type Database = {
           user_id: string;
           status?: "in" | "out" | "maybe";
           paid?: boolean;
-          team?: "A" | "B" | null;
+          team?: string | null;
         };
         Update: {
           status?: "in" | "out" | "maybe";
           paid?: boolean;
-          team?: "A" | "B" | null;
+          team?: string | null;
+        };
+      };
+      session_teams: {
+        Row: {
+          session_id: string;
+          team_key: string;
+          name: string;
+          created_at: string;
+        };
+        Insert: {
+          session_id: string;
+          team_key: string;
+          name: string;
+        };
+        Update: {
+          name?: string;
         };
       };
       messages: {

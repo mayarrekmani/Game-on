@@ -2,6 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Header from "@/components/Header";
 import SettingsForm from "@/components/SettingsForm";
+import SportSkillLevels from "@/components/SportSkillLevels";
+
+export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const supabase = createClient();
@@ -10,11 +13,18 @@ export default async function SettingsPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
-    .eq("id", user.id)
-    .single();
+  const [{ data: profile }, { data: skillRows }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
+      .eq("id", user.id)
+      .single(),
+    supabase.from("player_skill_levels").select("sport, level").eq("user_id", user.id),
+  ]);
+
+  const initialLevels = Object.fromEntries(
+    (skillRows ?? []).map((r) => [r.sport, r.level])
+  );
 
   return (
     <main>
@@ -29,7 +39,10 @@ export default async function SettingsPage() {
       <p className="mb-6 text-sm text-slate-500">
         Update how your name and icon show up to your groups.
       </p>
-      <SettingsForm userId={user.id} profile={profile} />
+      <div className="space-y-4">
+        <SettingsForm userId={user.id} profile={profile} />
+        <SportSkillLevels userId={user.id} initialLevels={initialLevels} />
+      </div>
     </main>
   );
 }

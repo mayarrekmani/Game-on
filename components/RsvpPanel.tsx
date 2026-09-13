@@ -55,6 +55,7 @@ export default function RsvpPanel({
   const [balancing, setBalancing] = useState(false);
   const [skillLevels, setSkillLevels] = useState<Map<string, number>>(new Map());
   const [teamError, setTeamError] = useState<string | null>(null);
+  const [teamSaveState, setTeamSaveState] = useState<"saving" | "saved" | null>(null);
   const supabase = createClient();
   const isCreator = userId === createdBy;
 
@@ -326,6 +327,7 @@ export default function RsvpPanel({
     setRsvps((prev) =>
       prev.map((r) => (r.user_id === targetUserId ? { ...r, team } : r))
     );
+    if (targetUserId === userId) setTeamSaveState("saving");
 
     const { error } = await supabase
       .from("rsvps")
@@ -341,6 +343,10 @@ export default function RsvpPanel({
       );
       setTeamError("Couldn't save that — try again in a moment.");
       setTimeout(() => setTeamError(null), 4000);
+      if (targetUserId === userId) setTeamSaveState(null);
+    } else if (targetUserId === userId) {
+      setTeamSaveState("saved");
+      setTimeout(() => setTeamSaveState(null), 1500);
     }
   };
 
@@ -490,7 +496,15 @@ export default function RsvpPanel({
 
       {myRsvp === "in" && teams.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="mb-2 text-sm font-semibold text-slate-500">Your team</h3>
+          <div className="mb-2 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-500">Your team</h3>
+            {teamSaveState === "saving" && (
+              <span className="text-xs text-slate-400">Saving...</span>
+            )}
+            {teamSaveState === "saved" && (
+              <span className="text-xs font-semibold text-green-600">✓ Saved</span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {teams.map((t) => (
               <button

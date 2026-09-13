@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { type SportKey } from "@/lib/sports";
 import Avatar from "@/components/Avatar";
 
@@ -20,6 +21,10 @@ export default function VirtualCourt({
   trackPayment,
   canTogglePaid,
   onTogglePaid,
+  sideALabel,
+  sideBLabel,
+  sideAHighlighted,
+  sideBHighlighted,
 }: {
   sport: SportKey;
   perSide: number;
@@ -27,6 +32,10 @@ export default function VirtualCourt({
   trackPayment: boolean;
   canTogglePaid: boolean;
   onTogglePaid?: (userId: string) => void;
+  sideALabel?: string;
+  sideBLabel?: string;
+  sideAHighlighted?: boolean;
+  sideBHighlighted?: boolean;
 }) {
   const sideA = confirmed.slice(0, perSide);
   const sideB = confirmed.slice(perSide, perSide * 2);
@@ -36,16 +45,23 @@ export default function VirtualCourt({
       const p = players[i];
       if (!p) {
         return (
-          <div
-            key={i}
+          <motion.div
+            key={`empty-${i}`}
+            layout
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-dashed border-black/20 bg-white/30 text-xs text-transparent"
           />
         );
       }
       const ringColor = !trackPayment ? undefined : p.paid ? "#22c55e" : "#ef4444";
       return (
-        <button
+        <motion.button
           key={p.userId}
+          layout
+          layoutId={`player-${p.userId}`}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+          initial={{ opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
           type="button"
           title={
             trackPayment
@@ -65,22 +81,41 @@ export default function VirtualCourt({
             size="sm"
             ringColor={ringColor}
           />
-        </button>
+        </motion.button>
       );
     });
 
+  const label = (text: string | undefined, highlighted: boolean | undefined) =>
+    text ? (
+      <span
+        className={`text-xs font-bold ${highlighted ? "text-brand-700" : "text-black/40"}`}
+      >
+        {text}
+        {highlighted && " (you)"}
+      </span>
+    ) : null;
+
   // ---------- Volleyball: sand/gym court, net across the middle, attack lines ----------
+  // Sides are stacked TOP (A) / BOTTOM (B) — labels must match that, not left/right.
   if (sport === "volleyball") {
     return (
-      <div className="overflow-hidden rounded-lg border-2 border-black/10 bg-[#f4dfa8]">
-        <div className="relative border-b-[3px] border-white/90 p-3 pb-5">
-          <div className="pointer-events-none absolute inset-x-4 bottom-2 border-t border-dashed border-black/25" />
-          <div className="flex flex-wrap justify-center gap-2">{renderSlots(sideA)}</div>
+      <div>
+        {(sideALabel || sideBLabel) && (
+          <div className="mb-1 flex justify-center">{label(sideALabel, sideAHighlighted)}</div>
+        )}
+        <div className="overflow-hidden rounded-lg border-2 border-black/10 bg-[#f4dfa8]">
+          <div className="relative border-b-[3px] border-white/90 p-3 pb-5">
+            <div className="pointer-events-none absolute inset-x-4 bottom-2 border-t border-dashed border-black/25" />
+            <div className="flex flex-wrap justify-center gap-2">{renderSlots(sideA)}</div>
+          </div>
+          <div className="relative p-3 pt-5">
+            <div className="pointer-events-none absolute inset-x-4 top-2 border-t border-dashed border-black/25" />
+            <div className="flex flex-wrap justify-center gap-2">{renderSlots(sideB)}</div>
+          </div>
         </div>
-        <div className="relative p-3 pt-5">
-          <div className="pointer-events-none absolute inset-x-4 top-2 border-t border-dashed border-black/25" />
-          <div className="flex flex-wrap justify-center gap-2">{renderSlots(sideB)}</div>
-        </div>
+        {(sideALabel || sideBLabel) && (
+          <div className="mt-1 flex justify-center">{label(sideBLabel, sideBHighlighted)}</div>
+        )}
       </div>
     );
   }
@@ -88,16 +123,24 @@ export default function VirtualCourt({
   // ---------- Soccer: pitch, halfway line + center circle, penalty boxes at each end ----------
   if (sport === "soccer") {
     return (
-      <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#4c9a5f]">
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/80" />
-        <div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80" />
-        <div className="pointer-events-none absolute left-0 top-1/2 h-24 w-10 -translate-y-1/2 border-2 border-l-0 border-white/70" />
-        <div className="pointer-events-none absolute right-0 top-1/2 h-24 w-10 -translate-y-1/2 border-2 border-r-0 border-white/70" />
-        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-12">
-          {renderSlots(sideA)}
-        </div>
-        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-12">
-          {renderSlots(sideB)}
+      <div>
+        {(sideALabel || sideBLabel) && (
+          <div className="mb-1 flex justify-between px-1">
+            {label(sideALabel, sideAHighlighted)}
+            {label(sideBLabel, sideBHighlighted)}
+          </div>
+        )}
+        <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#4c9a5f]">
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/80" />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80" />
+          <div className="pointer-events-none absolute left-0 top-1/2 h-24 w-10 -translate-y-1/2 border-2 border-l-0 border-white/70" />
+          <div className="pointer-events-none absolute right-0 top-1/2 h-24 w-10 -translate-y-1/2 border-2 border-r-0 border-white/70" />
+          <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-12">
+            {renderSlots(sideA)}
+          </div>
+          <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-12">
+            {renderSlots(sideB)}
+          </div>
         </div>
       </div>
     );
@@ -106,18 +149,26 @@ export default function VirtualCourt({
   // ---------- Basketball: hardwood, center circle, key/paint at each end ----------
   if (sport === "basketball") {
     return (
-      <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#dba86a]">
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/70" />
-        <div className="pointer-events-none absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70" />
-        <div className="pointer-events-none absolute left-0 top-1/2 h-20 w-14 -translate-y-1/2 border-2 border-l-0 border-white/60" />
-        <div className="pointer-events-none absolute right-0 top-1/2 h-20 w-14 -translate-y-1/2 border-2 border-r-0 border-white/60" />
-        <div className="pointer-events-none absolute left-14 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full border-2 border-white/50" />
-        <div className="pointer-events-none absolute right-14 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full border-2 border-white/50" />
-        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-16">
-          {renderSlots(sideA)}
-        </div>
-        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-16">
-          {renderSlots(sideB)}
+      <div>
+        {(sideALabel || sideBLabel) && (
+          <div className="mb-1 flex justify-between px-1">
+            {label(sideALabel, sideAHighlighted)}
+            {label(sideBLabel, sideBHighlighted)}
+          </div>
+        )}
+        <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#dba86a]">
+          <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/70" />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/70" />
+          <div className="pointer-events-none absolute left-0 top-1/2 h-20 w-14 -translate-y-1/2 border-2 border-l-0 border-white/60" />
+          <div className="pointer-events-none absolute right-0 top-1/2 h-20 w-14 -translate-y-1/2 border-2 border-r-0 border-white/60" />
+          <div className="pointer-events-none absolute left-14 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full border-2 border-white/50" />
+          <div className="pointer-events-none absolute right-14 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full border-2 border-white/50" />
+          <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-16">
+            {renderSlots(sideA)}
+          </div>
+          <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-16">
+            {renderSlots(sideB)}
+          </div>
         </div>
       </div>
     );
@@ -125,22 +176,30 @@ export default function VirtualCourt({
 
   // ---------- Flag football: turf, yard lines, end zones ----------
   return (
-    <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#4c9a5f]">
-      <div
-        className="pointer-events-none absolute inset-y-0 left-8 right-8"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 30px)",
-        }}
-      />
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-[#3d7a4c]" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-[#3d7a4c]" />
-      <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/80" />
-      <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-10">
-        {renderSlots(sideA)}
-      </div>
-      <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-10">
-        {renderSlots(sideB)}
+    <div>
+      {(sideALabel || sideBLabel) && (
+        <div className="mb-1 flex justify-between px-1">
+          {label(sideALabel, sideAHighlighted)}
+          {label(sideBLabel, sideBHighlighted)}
+        </div>
+      )}
+      <div className="relative flex overflow-hidden rounded-lg border-2 border-white/90 bg-[#4c9a5f]">
+        <div
+          className="pointer-events-none absolute inset-y-0 left-8 right-8"
+          style={{
+            backgroundImage:
+              "repeating-linear-gradient(90deg, rgba(255,255,255,0.35) 0 2px, transparent 2px 30px)",
+          }}
+        />
+        <div className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-[#3d7a4c]" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-[#3d7a4c]" />
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-white/80" />
+        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pl-10">
+          {renderSlots(sideA)}
+        </div>
+        <div className="relative flex flex-1 flex-wrap content-center justify-center gap-2 p-3 pr-10">
+          {renderSlots(sideB)}
+        </div>
       </div>
     </div>
   );

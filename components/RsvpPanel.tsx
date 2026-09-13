@@ -81,7 +81,8 @@ export default function RsvpPanel({
       .select(
         "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
       )
-      .eq("session_id", sessionId);
+      .eq("session_id", sessionId)
+      .order("responded_at", { ascending: true });
     if (data) setRsvps(data as unknown as RsvpRow[]);
   };
 
@@ -573,18 +574,6 @@ export default function RsvpPanel({
                 {sportConfig.venues ? "Court" : "Field"} {fieldIdx + 1}
               </div>
             )}
-            {(courtTeamA || courtTeamB) && (
-              <div className="mb-1 flex justify-between text-xs font-bold">
-                <span className={myTeam === courtTeamA?.team_key ? "text-brand-700" : "text-slate-400"}>
-                  {courtTeamA?.name ?? "Team A"}
-                  {myTeam === courtTeamA?.team_key && " (you)"}
-                </span>
-                <span className={myTeam === courtTeamB?.team_key ? "text-brand-700" : "text-slate-400"}>
-                  {courtTeamB?.name ?? "Team B"}
-                  {myTeam === courtTeamB?.team_key && " (you)"}
-                </span>
-              </div>
-            )}
             <VirtualCourt
               sport={sport}
               perSide={perSide}
@@ -595,6 +584,10 @@ export default function RsvpPanel({
               trackPayment={trackPayment}
               canTogglePaid={isCreator}
               onTogglePaid={togglePaid}
+              sideALabel={courtTeamA?.name}
+              sideBLabel={courtTeamB?.name}
+              sideAHighlighted={!!courtTeamA && myTeam === courtTeamA.team_key}
+              sideBHighlighted={!!courtTeamB && myTeam === courtTeamB.team_key}
             />
           </div>
         ))}

@@ -37,7 +37,8 @@ export default async function SessionPage({
         .select(
           "user_id, status, paid, team, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
         )
-        .eq("session_id", params.sessionId),
+        .eq("session_id", params.sessionId)
+        .order("responded_at", { ascending: true }),
       supabase
         .from("session_teams")
         .select("team_key, name")

@@ -31,53 +31,72 @@ export default async function DashboardPage() {
     .eq("user_id", user.id);
 
   const groups = (memberships ?? []).map((m: any) => m.groups).filter(Boolean);
+  const groupIds = groups.map((g: any) => g.id);
 
-  // For each group: is there a session or chat message newer than the
-  // last time this person viewed that tab? Drives the "new" badge.
-  const groupsWithBadges = await Promise.all(
-    groups.map(async (group: any) => {
-      const [{ data: reads }, { data: latestSession }, { data: latestMessage }, { count: memberCount }] =
-        await Promise.all([
+  // Batch everything in a handful of queries instead of 4 separate
+  // round-trips PER group — that N+1 pattern is what made this page slow
+  // once you're in more than one or two groups.
+  const [{ data: allReads }, { data: allSessions }, { data: allMessages }, { data: allMembers }] =
+    groupIds.length > 0
+      ? await Promise.all([
           supabase
             .from("group_reads")
-            .select("last_seen_sessions_at, last_seen_chat_at")
-            .eq("group_id", group.id)
+            .select("group_id, last_seen_sessions_at, last_seen_chat_at")
             .eq("user_id", user.id)
-            .maybeSingle(),
+            .in("group_id", groupIds),
           supabase
             .from("sessions")
-            .select("created_at")
-            .eq("group_id", group.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+            .select("group_id, created_at")
+            .in("group_id", groupIds),
           supabase
             .from("messages")
-            .select("created_at")
-            .eq("group_id", group.id)
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+            .select("group_id, created_at")
+            .in("group_id", groupIds),
           supabase
             .from("group_members")
-            .select("*", { count: "exact", head: true })
-            .eq("group_id", group.id),
-        ]);
+            .select("group_id")
+            .in("group_id", groupIds),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
-      const lastSeenSessions = reads?.last_seen_sessions_at ?? "1970-01-01";
-      const lastSeenChat = reads?.last_seen_chat_at ?? "1970-01-01";
-      const hasNewSession =
-        !!latestSession && new Date(latestSession.created_at) > new Date(lastSeenSessions);
-      const hasNewChat =
-        !!latestMessage && new Date(latestMessage.created_at) > new Date(lastSeenChat);
+  const latestByGroup = (rows: { group_id: string; created_at: string }[] | null) => {
+    const map = new Map<string, string>();
+    (rows ?? []).forEach((r) => {
+      const current = map.get(r.group_id);
+      if (!current || new Date(r.created_at) > new Date(current)) {
+        map.set(r.group_id, r.created_at);
+      }
+    });
+    return map;
+  };
 
-      return {
-        ...group,
-        memberCount: memberCount ?? 0,
-        hasNew: hasNewSession || hasNewChat,
-      };
-    })
+  const latestSessionByGroup = latestByGroup(allSessions as any);
+  const latestMessageByGroup = latestByGroup(allMessages as any);
+
+  const readsByGroup = new Map(
+    (allReads ?? []).map((r: any) => [r.group_id, r])
   );
+
+  const memberCountByGroup = new Map<string, number>();
+  (allMembers ?? []).forEach((m: any) => {
+    memberCountByGroup.set(m.group_id, (memberCountByGroup.get(m.group_id) ?? 0) + 1);
+  });
+
+  const groupsWithBadges = groups.map((group: any) => {
+    const reads = readsByGroup.get(group.id);
+    const lastSeenSessions = reads?.last_seen_sessions_at ?? "1970-01-01";
+    const lastSeenChat = reads?.last_seen_chat_at ?? "1970-01-01";
+    const latestSession = latestSessionByGroup.get(group.id);
+    const latestMessage = latestMessageByGroup.get(group.id);
+    const hasNewSession = !!latestSession && new Date(latestSession) > new Date(lastSeenSessions);
+    const hasNewChat = !!latestMessage && new Date(latestMessage) > new Date(lastSeenChat);
+
+    return {
+      ...group,
+      memberCount: memberCountByGroup.get(group.id) ?? 0,
+      hasNew: hasNewSession || hasNewChat,
+    };
+  });
 
   return (
     <main>

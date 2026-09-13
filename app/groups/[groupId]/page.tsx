@@ -5,7 +5,7 @@ import Header from "@/components/Header";
 import SuggestSessionForm from "@/components/SuggestSessionForm";
 import GroupChat from "@/components/GroupChat";
 import GroupTabs from "@/components/GroupTabs";
-import Avatar from "@/components/Avatar";
+import MembersList from "@/components/MembersList";
 import { SPORTS, type SportKey } from "@/lib/sports";
 
 // Sessions/chat/notification badges here change constantly — never serve
@@ -111,26 +111,15 @@ export default async function GroupPage({
     <GroupChat groupId={group.id} userId={user.id} initialMessages={(messages ?? []) as any} />
   );
 
+  const isAdmin = members?.some((m: any) => m.user_id === user.id && m.role === "admin") ?? false;
+
   const membersContent = (
-    <div className="flex flex-wrap gap-2">
-      {members?.map((m: any) => (
-        <span
-          key={m.user_id}
-          className="flex items-center gap-2 rounded-full bg-slate-100 py-1 pl-1 pr-3 text-sm"
-        >
-          <Avatar
-            shape={m.profiles?.avatar_shape ?? "circle"}
-            color={m.profiles?.avatar_color}
-            icon={m.profiles?.avatar_icon}
-            photoUrl={m.profiles?.avatar_url}
-            name={m.profiles?.display_name}
-            size="xs"
-          />
-          {m.profiles?.display_name ?? "Member"}
-          {m.role === "admin" && <span className="text-xs text-brand-600">· admin</span>}
-        </span>
-      ))}
-    </div>
+    <MembersList
+      groupId={group.id}
+      currentUserId={user.id}
+      isAdmin={isAdmin}
+      initialMembers={(members ?? []) as any}
+    />
   );
 
   return (
@@ -159,7 +148,17 @@ export default async function GroupPage({
             {!group.avatar_url && group.icon_emoji}
           </div>
           <div>
-            <h1 className="font-serif text-xl font-extrabold sm:text-2xl">{group.name}</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-serif text-xl font-extrabold sm:text-2xl">{group.name}</h1>
+              {isAdmin && (
+                <Link
+                  href={`/groups/${group.id}/edit`}
+                  className="text-xs font-semibold text-brand-700 underline"
+                >
+                  Edit
+                </Link>
+              )}
+            </div>
             <p className="text-sm text-slate-500">{members?.length ?? 0} members</p>
           </div>
         </div>

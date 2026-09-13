@@ -17,7 +17,8 @@ type Player = {
 export default function VirtualCourt({
   sport,
   perSide,
-  confirmed,
+  sideAPlayers,
+  sideBPlayers,
   trackPayment,
   canTogglePaid,
   onTogglePaid,
@@ -28,7 +29,8 @@ export default function VirtualCourt({
 }: {
   sport: SportKey;
   perSide: number;
-  confirmed: Player[];
+  sideAPlayers: Player[];
+  sideBPlayers: Player[];
   trackPayment: boolean;
   canTogglePaid: boolean;
   onTogglePaid?: (userId: string) => void;
@@ -37,8 +39,8 @@ export default function VirtualCourt({
   sideAHighlighted?: boolean;
   sideBHighlighted?: boolean;
 }) {
-  const sideA = confirmed.slice(0, perSide);
-  const sideB = confirmed.slice(perSide, perSide * 2);
+  const sideA = sideAPlayers;
+  const sideB = sideBPlayers;
 
   const renderSlots = (players: Player[]) =>
     Array.from({ length: perSide }).map((_, i) => {

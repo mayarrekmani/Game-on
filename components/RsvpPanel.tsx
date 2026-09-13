@@ -589,10 +589,8 @@ export default function RsvpPanel({
             <VirtualCourt
               sport={sport}
               perSide={perSide}
-              confirmed={[
-                ...sideAFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide),
-                ...sideBFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide),
-              ]}
+              sideAPlayers={sideAFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide)}
+              sideBPlayers={sideBFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide)}
               trackPayment={trackPayment}
               canTogglePaid={isCreator}
               onTogglePaid={togglePaid}

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { uploadAvatarImage } from "@/lib/uploadImage";
 import Avatar from "@/components/Avatar";
 
 const SHAPES: { key: "circle" | "square" | "hex" | "shield"; label: string }[] = [
@@ -29,6 +31,8 @@ export default function ProfileIdentityPicker({
 }) {
   const [state, setState] = useState<ProfileIdentity>(initial);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const supabase = createClient();
 
   const update = (patch: Partial<ProfileIdentity>) => {
     const merged = { ...state, ...patch };
@@ -36,13 +40,19 @@ export default function ProfileIdentityPicker({
     onChange(merged);
   };
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (ev) => update({ photoDataUrl: ev.target?.result as string, icon: null });
-    reader.readAsDataURL(file);
+    setUploading(true);
+    try {
+      const url = await uploadAvatarImage(supabase, file, "profiles");
+      update({ photoDataUrl: url, icon: null });
+    } catch {
+      setFileName("Upload failed — try again");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -135,9 +145,10 @@ export default function ProfileIdentityPicker({
       <div className="flex items-center gap-2">
         <label className="cursor-pointer text-xs font-semibold text-brand-700 underline">
           📷 Or upload a photo
-          <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+          <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} disabled={uploading} />
         </label>
-        {fileName && <span className="text-xs text-slate-400">{fileName}</span>}
+        {uploading && <span className="text-xs text-slate-400">Uploading...</span>}
+        {!uploading && fileName && <span className="text-xs text-slate-400">{fileName}</span>}
       </div>
     </div>
   );

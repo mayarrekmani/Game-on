@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { uploadAvatarImage } from "@/lib/uploadImage";
 
 const ICONS = ["🏆", "⚽", "🏀", "🏐", "🏈", "🔥", "⚡", "🎯", "🦁", "🚀"];
 const COLORS = ["#d9531e", "#2f855a", "#2569c9", "#7a4f9e", "#1b2838", "#b84316"];
@@ -18,6 +20,8 @@ export default function GroupIconPicker({
   const [color, setColor] = useState(initialColor);
   const [photoDataUrl, setPhotoDataUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const supabase = createClient();
 
   const update = (next: Partial<{ icon: string; color: string; photoDataUrl: string | null }>) => {
     const merged = { icon, color, photoDataUrl, ...next };
@@ -27,13 +31,19 @@ export default function GroupIconPicker({
     onChange(merged);
   };
 
-  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (ev) => update({ photoDataUrl: ev.target?.result as string });
-    reader.readAsDataURL(file);
+    setUploading(true);
+    try {
+      const url = await uploadAvatarImage(supabase, file, "groups");
+      update({ photoDataUrl: url });
+    } catch {
+      setFileName("Upload failed — try again");
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -89,9 +99,10 @@ export default function GroupIconPicker({
         <div className="flex items-center gap-2">
           <label className="cursor-pointer text-xs font-semibold text-brand-700 underline">
             📷 Or upload an image
-            <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} />
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhoto} disabled={uploading} />
           </label>
-          {fileName && <span className="text-xs text-slate-400">{fileName}</span>}
+          {uploading && <span className="text-xs text-slate-400">Uploading...</span>}
+          {!uploading && fileName && <span className="text-xs text-slate-400">{fileName}</span>}
         </div>
       </div>
     </div>

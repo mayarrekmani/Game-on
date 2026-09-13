@@ -116,6 +116,8 @@ export type Database = {
           title?: string | null;
           location?: string;
           starts_at?: string;
+          venue?: string | null;
+          fields_count?: number;
           max_players?: number | null;
           total_cost?: number;
         };

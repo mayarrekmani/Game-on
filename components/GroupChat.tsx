@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import Avatar from "@/components/Avatar";
 
+const STICKERS = ["👍", "🔥", "🎉", "😂", "❤️", "🙌", "😢", "👏", "⚽", "🏆", "😴", "🤔"];
+
 type Message = {
   id: string;
   user_id: string;
@@ -30,6 +32,7 @@ export default function GroupChat({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [showStickers, setShowStickers] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -70,6 +73,11 @@ export default function GroupChat({
     setSending(false);
   };
 
+  const sendSticker = async (sticker: string) => {
+    setShowStickers(false);
+    await supabase.from("messages").insert({ group_id: groupId, user_id: userId, content: sticker });
+  };
+
   return (
     <div>
       <div className="mb-3 flex max-h-80 flex-col gap-3 overflow-y-auto pr-1">
@@ -95,15 +103,19 @@ export default function GroupChat({
                 size="xs"
               />
               <div className="max-w-[75%]">
-                <div
-                  className={`rounded-2xl px-3.5 py-2 text-sm ${
-                    mine
-                      ? "rounded-br-sm bg-brand-600 text-white"
-                      : "rounded-bl-sm bg-slate-100 text-slate-800"
-                  }`}
-                >
-                  {m.content}
-                </div>
+                {STICKERS.includes(m.content) ? (
+                  <div className="text-4xl">{m.content}</div>
+                ) : (
+                  <div
+                    className={`rounded-2xl px-3.5 py-2 text-sm ${
+                      mine
+                        ? "rounded-br-sm bg-brand-600 text-white"
+                        : "rounded-bl-sm bg-slate-100 text-slate-800"
+                    }`}
+                  >
+                    {m.content}
+                  </div>
+                )}
                 <div
                   className={`mt-0.5 text-xs text-slate-400 ${mine ? "text-right" : ""}`}
                 >
@@ -116,7 +128,30 @@ export default function GroupChat({
         <div ref={bottomRef} />
       </div>
 
+      {showStickers && (
+        <div className="mb-2 flex flex-wrap gap-1.5 rounded-lg border border-slate-200 bg-slate-50 p-2">
+          {STICKERS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => sendSticker(s)}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-xl hover:bg-white"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setShowStickers((s) => !s)}
+          className="flex-shrink-0 rounded-full border border-slate-300 px-3 py-2.5 text-lg"
+          title="Stickers"
+        >
+          😀
+        </button>
         <input
           className="flex-1 rounded-full border border-slate-300 px-4 py-2.5 text-sm"
           placeholder="Message the group..."

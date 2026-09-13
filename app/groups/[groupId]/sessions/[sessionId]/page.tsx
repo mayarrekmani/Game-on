@@ -5,6 +5,10 @@ import Header from "@/components/Header";
 import RsvpPanel from "@/components/RsvpPanel";
 import { SPORTS, type SportKey } from "@/lib/sports";
 
+// This page shows live RSVP data that changes constantly — never serve a
+// cached snapshot of it.
+export const dynamic = "force-dynamic";
+
 export default async function SessionPage({
   params,
 }: {
@@ -56,9 +60,19 @@ export default async function SessionPage({
       </Link>
 
       <div className="mb-6 rounded-lg border border-slate-200 bg-white p-5">
-        <div className="mb-1 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-          {SPORTS[session.sport as SportKey].emoji} {SPORTS[session.sport as SportKey].name} · {session.format_label}
-          {session.venue && ` · ${session.venue}`}
+        <div className="mb-1 flex items-center justify-between">
+          <div className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {SPORTS[session.sport as SportKey].emoji} {SPORTS[session.sport as SportKey].name} · {session.format_label}
+            {session.venue && ` · ${session.venue}`}
+          </div>
+          {session.created_by === user.id && (
+            <Link
+              href={`/groups/${params.groupId}/sessions/${params.sessionId}/edit`}
+              className="text-xs font-semibold text-brand-700 underline"
+            >
+              Edit
+            </Link>
+          )}
         </div>
         <h1 className="font-serif text-xl font-extrabold">
           {session.title || `${SPORTS[session.sport as SportKey].name} session`}

@@ -24,17 +24,16 @@ export default async function GroupPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
-    .eq("id", user.id)
-    .single();
-
-  const { data: group } = await supabase
-    .from("groups")
-    .select("*")
-    .eq("id", params.groupId)
-    .single();
+  // These two don't depend on each other — fetch them together instead
+  // of one-after-another to save a full network round-trip.
+  const [{ data: profile }, { data: group }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
+      .eq("id", user.id)
+      .single(),
+    supabase.from("groups").select("*").eq("id", params.groupId).single(),
+  ]);
 
   if (!group) notFound();
 

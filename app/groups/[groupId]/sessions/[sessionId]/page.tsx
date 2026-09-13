@@ -21,24 +21,25 @@ export default async function SessionPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
-    .eq("id", user.id)
-    .single();
-
-  const { data: session } = await supabase
-    .from("sessions")
-    .select("*, groups(name)")
-    .eq("id", params.sessionId)
-    .single();
+  // None of these three depend on each other's results (rsvps only needs
+  // the sessionId from the URL, not the session row itself) — fetch them
+  // together instead of one-after-another.
+  const [{ data: profile }, { data: session }, { data: rsvps }] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
+      .eq("id", user.id)
+      .single(),
+    supabase.from("sessions").select("*, groups(name)").eq("id", params.sessionId).single(),
+    supabase
+      .from("rsvps")
+      .select(
+        "user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+      )
+      .eq("session_id", params.sessionId),
+  ]);
 
   if (!session) notFound();
-
-  const { data: rsvps } = await supabase
-    .from("rsvps")
-    .select("user_id, status, paid, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)")
-    .eq("session_id", params.sessionId);
 
   const date = new Date(session.starts_at);
 

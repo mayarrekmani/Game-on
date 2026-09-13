@@ -54,6 +54,7 @@ export default function RsvpPanel({
   const [needsSkillLevel, setNeedsSkillLevel] = useState(false);
   const [balancing, setBalancing] = useState(false);
   const [skillLevels, setSkillLevels] = useState<Map<string, number>>(new Map());
+  const [teamError, setTeamError] = useState<string | null>(null);
   const supabase = createClient();
   const isCreator = userId === createdBy;
 
@@ -145,6 +146,37 @@ export default function RsvpPanel({
     return () => {
       document.removeEventListener("visibilitychange", handleFocus);
       window.removeEventListener("focus", handleFocus);
+    };
+  }, [sessionId, supabase]);
+
+  // Keep the team list itself in sync live too — otherwise if the
+  // creator adds or renames a team, other people viewing the page won't
+  // see it until they refresh, which could cause a pick to reference a
+  // team their screen doesn't know about yet.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`session_teams:${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_teams",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        async () => {
+          const { data } = await supabase
+            .from("session_teams")
+            .select("team_key, name")
+            .eq("session_id", sessionId)
+            .order("team_key", { ascending: true });
+          if (data) setTeams(data);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
   }, [sessionId, supabase]);
 
@@ -289,14 +321,27 @@ export default function RsvpPanel({
   const assignTeam = async (targetUserId: string, team: string | null) => {
     // Anyone can set their own team; only the creator can set someone else's.
     if (targetUserId !== userId && !isCreator) return;
+
+    const previous = rsvps.find((r) => r.user_id === targetUserId)?.team ?? null;
     setRsvps((prev) =>
       prev.map((r) => (r.user_id === targetUserId ? { ...r, team } : r))
     );
-    await supabase
+
+    const { error } = await supabase
       .from("rsvps")
       .update({ team })
       .eq("session_id", sessionId)
       .eq("user_id", targetUserId);
+
+    if (error) {
+      // The write didn't actually go through — revert the screen instead
+      // of leaving it showing a selection that was never saved.
+      setRsvps((prev) =>
+        prev.map((r) => (r.user_id === targetUserId ? { ...r, team: previous } : r))
+      );
+      setTeamError("Couldn't save that — try again in a moment.");
+      setTimeout(() => setTeamError(null), 4000);
+    }
   };
 
   const addTeam = async () => {
@@ -462,6 +507,7 @@ export default function RsvpPanel({
               </button>
             ))}
           </div>
+          {teamError && <p className="mt-2 text-xs text-red-600">{teamError}</p>}
         </div>
       )}
 

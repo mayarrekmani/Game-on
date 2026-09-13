@@ -17,9 +17,9 @@ export default async function SessionPage({
   const supabase = createClient();
 
   const {
-    data: { session },
+    data: { session: authSession },
   } = await supabase.auth.getSession();
-  const user = session?.user;
+  const user = authSession?.user;
   if (!user) redirect("/login");
 
   // None of these three depend on each other's results (rsvps only needs

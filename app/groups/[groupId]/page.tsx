@@ -20,8 +20,9 @@ export default async function GroupPage({
   const supabase = createClient();
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) redirect("/login");
 
   // These two don't depend on each other — fetch them together instead

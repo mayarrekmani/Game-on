@@ -5,8 +5,9 @@ import OnboardingForm from "@/components/OnboardingForm";
 export default async function OnboardingPage() {
   const supabase = createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) redirect("/login");
 
   const { data: profile } = await supabase

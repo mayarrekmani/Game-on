@@ -241,14 +241,26 @@ export default function RsvpPanel({
 
   const myTeam = rsvps.find((r) => r.user_id === userId)?.team ?? null;
 
-  // Anyone assigned to the court teams goes to their actual side;
-  // anyone unassigned (or assigned to a bench team) just fills
-  // whatever's left on the court, same as before this feature existed.
-  const courtOrder = [
-    ...confirmed.filter((p) => p.team === courtTeamA?.team_key),
-    ...confirmed.filter((p) => p.team === courtTeamB?.team_key),
-    ...confirmed.filter((p) => !p.team || (p.team !== courtTeamA?.team_key && p.team !== courtTeamB?.team_key)),
-  ];
+  // Build each side's roster independently, capped at that side's actual
+  // capacity — never by flattening-then-slicing an array, which is what
+  // let a Team B player visually "leak" onto Team A's side whenever
+  // Team A had fewer people than the court could hold. Team members
+  // always occupy their own side; unassigned players only ever fill
+  // genuinely empty remaining spots.
+  const sideCapacity = perSide * fieldsCount;
+  const teamAMembers = confirmed.filter((p) => p.team === courtTeamA?.team_key);
+  const teamBMembers = confirmed.filter((p) => p.team === courtTeamB?.team_key);
+  const unassignedOnCourt = confirmed.filter(
+    (p) => !p.team || (p.team !== courtTeamA?.team_key && p.team !== courtTeamB?.team_key)
+  );
+
+  const sideAFull = [...teamAMembers, ...unassignedOnCourt].slice(0, sideCapacity);
+  const unassignedUsedInA = Math.max(0, sideAFull.length - teamAMembers.length);
+  const sideBFull = [...teamBMembers, ...unassignedOnCourt.slice(unassignedUsedInA)].slice(
+    0,
+    sideCapacity
+  );
+
   const hasManualTeams = confirmed.some((p) => p.team);
 
   const confirmedIdsKey = confirmed.map((p) => p.userId).sort().join(",");
@@ -577,10 +589,10 @@ export default function RsvpPanel({
             <VirtualCourt
               sport={sport}
               perSide={perSide}
-              confirmed={courtOrder.slice(
-                fieldIdx * capacityPerField,
-                (fieldIdx + 1) * capacityPerField
-              )}
+              confirmed={[
+                ...sideAFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide),
+                ...sideBFull.slice(fieldIdx * perSide, (fieldIdx + 1) * perSide),
+              ]}
               trackPayment={trackPayment}
               canTogglePaid={isCreator}
               onTogglePaid={togglePaid}

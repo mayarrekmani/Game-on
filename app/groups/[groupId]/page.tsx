@@ -20,7 +20,7 @@ export default async function GroupPage({
   const supabase = createClient();
 
   const {
-    data: { session: authSession },
+    data: { session },
   } = await supabase.auth.getSession();
   const user = session?.user;
   if (!user) redirect("/login");
@@ -30,9 +30,7 @@ export default async function GroupPage({
   const [{ data: profile }, { data: group }] = await Promise.all([
     supabase
       .from("profiles")
-      .select(
-        "display_name, avatar_shape, avatar_color, avatar_icon, avatar_url",
-      )
+      .select("display_name, avatar_shape, avatar_color, avatar_icon, avatar_url")
       .eq("id", user.id)
       .single(),
     supabase.from("groups").select("*").eq("id", params.groupId).single(),
@@ -40,37 +38,33 @@ export default async function GroupPage({
 
   if (!group) notFound();
 
-  const [
-    { data: members },
-    { data: sessions },
-    { data: messages },
-    { data: reads },
-  ] = await Promise.all([
-    supabase
-      .from("group_members")
-      .select(
-        "user_id, role, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)",
-      )
-      .eq("group_id", params.groupId),
-    supabase
-      .from("sessions")
-      .select("*")
-      .eq("group_id", params.groupId)
-      .order("starts_at", { ascending: true }),
-    supabase
-      .from("messages")
-      .select(
-        "id, user_id, content, created_at, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)",
-      )
-      .eq("group_id", params.groupId)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("group_reads")
-      .select("last_seen_sessions_at, last_seen_chat_at")
-      .eq("group_id", params.groupId)
-      .eq("user_id", user.id)
-      .maybeSingle(),
-  ]);
+  const [{ data: members }, { data: sessions }, { data: messages }, { data: reads }] =
+    await Promise.all([
+      supabase
+        .from("group_members")
+        .select(
+          "user_id, role, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+        )
+        .eq("group_id", params.groupId),
+      supabase
+        .from("sessions")
+        .select("*")
+        .eq("group_id", params.groupId)
+        .order("starts_at", { ascending: true }),
+      supabase
+        .from("messages")
+        .select(
+          "id, user_id, content, created_at, profiles(display_name, avatar_shape, avatar_color, avatar_icon, avatar_url)"
+        )
+        .eq("group_id", params.groupId)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("group_reads")
+        .select("last_seen_sessions_at, last_seen_chat_at")
+        .eq("group_id", params.groupId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
 
   const now = new Date();
   const upcoming = (sessions ?? []).filter((s) => new Date(s.starts_at) >= now);
@@ -79,10 +73,10 @@ export default async function GroupPage({
   const lastSeenSessions = reads?.last_seen_sessions_at ?? "1970-01-01";
   const lastSeenChat = reads?.last_seen_chat_at ?? "1970-01-01";
   const hasNewSessions = (sessions ?? []).some(
-    (s) => new Date(s.created_at) > new Date(lastSeenSessions),
+    (s) => new Date(s.created_at) > new Date(lastSeenSessions)
   );
   const hasNewChat = (messages ?? []).some(
-    (m) => new Date(m.created_at) > new Date(lastSeenChat),
+    (m) => new Date(m.created_at) > new Date(lastSeenChat)
   );
 
   const sessionsContent = (
@@ -115,16 +109,10 @@ export default async function GroupPage({
   );
 
   const chatContent = (
-    <GroupChat
-      groupId={group.id}
-      userId={user.id}
-      initialMessages={(messages ?? []) as any}
-    />
+    <GroupChat groupId={group.id} userId={user.id} initialMessages={(messages ?? []) as any} />
   );
 
-  const isAdmin =
-    members?.some((m: any) => m.user_id === user.id && m.role === "admin") ??
-    false;
+  const isAdmin = members?.some((m: any) => m.user_id === user.id && m.role === "admin") ?? false;
 
   const membersContent = (
     <MembersList
@@ -145,10 +133,7 @@ export default async function GroupPage({
         avatarUrl={profile?.avatar_url}
       />
 
-      <Link
-        href="/"
-        className="mb-3 inline-block text-sm text-brand-700 hover:underline"
-      >
+      <Link href="/" className="mb-3 inline-block text-sm text-brand-700 hover:underline">
         ← All groups
       </Link>
 
@@ -158,18 +143,14 @@ export default async function GroupPage({
             className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-cover bg-center text-xl text-white"
             style={{
               background: group.avatar_url ? undefined : group.color,
-              backgroundImage: group.avatar_url
-                ? `url(${group.avatar_url})`
-                : undefined,
+              backgroundImage: group.avatar_url ? `url(${group.avatar_url})` : undefined,
             }}
           >
             {!group.avatar_url && group.icon_emoji}
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-serif text-xl font-extrabold sm:text-2xl">
-                {group.name}
-              </h1>
+              <h1 className="font-serif text-xl font-extrabold sm:text-2xl">{group.name}</h1>
               {isAdmin && (
                 <Link
                   href={`/groups/${group.id}/edit`}
@@ -179,16 +160,12 @@ export default async function GroupPage({
                 </Link>
               )}
             </div>
-            <p className="text-sm text-slate-500">
-              {members?.length ?? 0} members
-            </p>
+            <p className="text-sm text-slate-500">{members?.length ?? 0} members</p>
           </div>
         </div>
         <div className="rounded-lg border border-dashed border-slate-300 px-3 py-2 text-center">
           <div className="text-xs text-slate-500">Invite code</div>
-          <div className="font-mono font-semibold tracking-widest">
-            {group.invite_code}
-          </div>
+          <div className="font-mono font-semibold tracking-widest">{group.invite_code}</div>
         </div>
       </div>
 
@@ -205,13 +182,7 @@ export default async function GroupPage({
   );
 }
 
-function SessionListItem({
-  session,
-  groupId,
-}: {
-  session: any;
-  groupId: string;
-}) {
+function SessionListItem({ session, groupId }: { session: any; groupId: string }) {
   const date = new Date(session.starts_at);
   const sportConfig = SPORTS[session.sport as SportKey];
   return (
@@ -228,16 +199,8 @@ function SessionListItem({
             {sportConfig.name} ({session.format_label}) — {session.location}
           </div>
           <div className="text-xs text-slate-500">
-            {date.toLocaleDateString(undefined, {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            })}{" "}
-            at{" "}
-            {date.toLocaleTimeString(undefined, {
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+            {date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}{" "}
+            at {date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
             {session.total_cost > 0 && ` · $${session.total_cost} total`}
           </div>
         </div>
